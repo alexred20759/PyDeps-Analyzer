@@ -2,6 +2,10 @@
 
 **Analisi delle dipendenze Python attraverso l'analisi statica del codice**
 
+## 🖥️ Screenshot dell'applicazione
+
+![PyDeps Analyzer - Interfaccia grafica](assets/pydeps_analyzer_gui.png)
+
 PyDeps Analyzer è un'applicazione desktop sviluppata in Python con PySide6, progettata per analizzare il codice sorgente di un progetto Python e individuare le importazioni utilizzate e le potenziali dipendenze esterne.
 
 L'obiettivo è aiutare gli sviluppatori a comprendere meglio le dipendenze di un progetto e facilitare la preparazione di un file `requirements.txt`.
