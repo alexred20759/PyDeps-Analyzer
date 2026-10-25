@@ -10,6 +10,7 @@ Funzioni:
 - Visualizzazione della finestra principale.
 - Selezione della cartella del progetto.
 - Pulsante per avviare l'analisi.
+- Pulsante per creare requirements.txt.
 - Area dedicata alla visualizzazione dei risultati.
 """
 
@@ -52,6 +53,9 @@ class FinestraPrincipale(QMainWindow):
 
         # Memorizza la cartella selezionata dall'utente.
         self.cartella_progetto = None
+
+        # Memorizza i risultati dell'ultima analisi riuscita.
+        self.ultimo_risultato_analisi = None
 
         # Costruisce l'interfaccia grafica.
         self._crea_interfaccia()
@@ -132,9 +136,13 @@ class FinestraPrincipale(QMainWindow):
         layout_principale.addWidget(gruppo_cartella)
 
         # ----------------------------------------------------
-        # PULSANTE DI ANALISI
+        # PULSANTI OPERATIVI
         # ----------------------------------------------------
 
+        # Layout orizzontale per affiancare i pulsanti.
+        layout_pulsanti = QHBoxLayout()
+
+        # Pulsante per avviare l'analisi.
         self.pulsante_analizza = QPushButton(
             "Analizza progetto"
         )
@@ -166,7 +174,42 @@ class FinestraPrincipale(QMainWindow):
             """
         )
 
-        layout_principale.addWidget(self.pulsante_analizza)
+        # Pulsante per generare requirements.txt.
+        self.pulsante_requirements = QPushButton(
+            "Crea requirements.txt"
+        )
+        self.pulsante_requirements.setMinimumHeight(42)
+        self.pulsante_requirements.setEnabled(False)
+        self.pulsante_requirements.clicked.connect(
+            self._crea_requirements
+        )
+
+        self.pulsante_requirements.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #15803D;
+                color: white;
+                font-size: 15px;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+            }
+
+            QPushButton:hover {
+                background-color: #166534;
+            }
+
+            QPushButton:disabled {
+                background-color: #94A3B8;
+            }
+            """
+        )
+
+        layout_pulsanti.addWidget(self.pulsante_analizza)
+        layout_pulsanti.addWidget(self.pulsante_requirements)
+
+        layout_principale.addLayout(layout_pulsanti)
 
         # ----------------------------------------------------
         # AREA DEI RISULTATI
@@ -232,6 +275,11 @@ class FinestraPrincipale(QMainWindow):
         self.cartella_progetto = Path(cartella)
         self.campo_cartella.setText(cartella)
 
+        # I risultati precedenti non valgono automaticamente
+        # per la nuova cartella selezionata.
+        self.ultimo_risultato_analisi = None
+        self.pulsante_requirements.setEnabled(False)
+
         # Abilita il pulsante di analisi.
         self.pulsante_analizza.setEnabled(True)
 
@@ -257,6 +305,11 @@ class FinestraPrincipale(QMainWindow):
                 "Seleziona prima la cartella del progetto.",
             )
             return
+
+        # I risultati precedenti non devono essere riutilizzati
+        # se la nuova analisi fallisce.
+        self.ultimo_risultato_analisi = None
+        self.pulsante_requirements.setEnabled(False)
 
         # Aggiorna la barra di stato.
         self.statusBar().showMessage(
@@ -341,7 +394,6 @@ class FinestraPrincipale(QMainWindow):
 
                 # Mostra un solo gruppo per ciascun pacchetto.
                 for nome_pacchetto in sorted(pacchetti_esterni):
-
                     righe.append(f"  - {nome_pacchetto}")
 
                     # Elenca i moduli che hanno generato il candidato.
@@ -365,8 +417,10 @@ class FinestraPrincipale(QMainWindow):
             else:
                 righe.append("  Nessun modulo esterno rilevato.")
 
-            
-            # Mostra le importazioni da verificare.
+            # ------------------------------------------------
+            # IMPORTAZIONI DA VERIFICARE
+            # ------------------------------------------------
+
             righe.extend([
                 "",
                 "IMPORTAZIONI DA VERIFICARE",
@@ -380,7 +434,10 @@ class FinestraPrincipale(QMainWindow):
             # Aggiunge le chiamate dinamiche il cui modulo
             # non è stato identificato staticamente.
             moduli_da_verificare.update(
-                analisi["importazioni_dinamiche_da_verificare"]
+                analisi.get(
+                    "importazioni_dinamiche_da_verificare",
+                    set(),
+                )
             )
 
             for modulo in sorted(moduli_da_verificare):
@@ -391,44 +448,78 @@ class FinestraPrincipale(QMainWindow):
                     "  Nessuna importazione da verificare."
                 )
 
+            # ------------------------------------------------
+            # IMPORTAZIONI DINAMICHE
+            # ------------------------------------------------
 
-            # Mostra le importazioni dinamiche.
             righe.extend([
                 "",
                 "IMPORTAZIONI DINAMICHE RILEVATE",
             ])
 
             for modulo in sorted(
-                analisi["importazioni_dinamiche"]
+                analisi.get("importazioni_dinamiche", set())
             ):
                 righe.append(f"  - {modulo}")
 
-            if not analisi["importazioni_dinamiche"]:
+            if not analisi.get("importazioni_dinamiche"):
                 righe.append(
                     "  Nessuna importazione dinamica rilevata."
                 )
 
-            # Mostra gli eventuali errori nei file analizzati.
+            # ------------------------------------------------
+            # ERRORI DI ANALISI
+            # ------------------------------------------------
+
             righe.extend(["", "ERRORI DI ANALISI"])
 
-            for errore in analisi["errori"]:
+            errori_analisi = analisi.get("errori", [])
+
+            for errore in errori_analisi:
                 righe.append(f"  File: {errore['file']}")
                 righe.append(
                     f"  Problema: {errore['messaggio']}"
                 )
 
-            if not analisi["errori"]:
+            if not errori_analisi:
                 righe.append("  Nessun errore rilevato.")
+
+            # Salva il risultato per il pulsante requirements.txt.
+            self.ultimo_risultato_analisi = risultato
+
+            # Abilita la generazione solo se l'analisi
+            # non ha errori di lettura o di sintassi.
+            self.pulsante_requirements.setEnabled(
+                not errori_analisi
+            )
+
+            if errori_analisi:
+                righe.extend([
+                    "",
+                    "ATTENZIONE",
+                    "La generazione di requirements.txt è disabilitata",
+                    "perché alcuni file non sono stati analizzati.",
+                ])
 
             # Visualizza il risultato completo nella GUI.
             self.area_risultati.setPlainText("\n".join(righe))
 
-            self.statusBar().showMessage(
-                "Analisi completata."
-            )
+            if errori_analisi:
+                self.statusBar().showMessage(
+                    "Analisi terminata con errori. "
+                    "Risolvi gli errori prima di generare requirements.txt."
+                )
+            else:
+                self.statusBar().showMessage(
+                    "Analisi completata."
+                )
 
         except Exception as errore:
-            # Mostra gli errori imprevisti senza chiudere la GUI.
+            # In caso di errore imprevisto, invalida i risultati.
+            self.ultimo_risultato_analisi = None
+            self.pulsante_requirements.setEnabled(False)
+
+            # Mostra gli errori senza chiudere la GUI.
             QMessageBox.critical(
                 self,
                 "Errore",
@@ -441,7 +532,183 @@ class FinestraPrincipale(QMainWindow):
 
         finally:
             # Riabilita il pulsante al termine dell'operazione.
-            self.pulsante_analizza.setEnabled(True)
+            self.pulsante_analizza.setEnabled(
+                self.cartella_progetto is not None
+            )
+
+    def _crea_requirements(self):
+        """Crea requirements.txt usando i pacchetti riconosciuti."""
+
+        # Verifica che esista una cartella selezionata.
+        if self.cartella_progetto is None:
+            QMessageBox.warning(
+                self,
+                "Cartella non selezionata",
+                "Seleziona prima la cartella del progetto.",
+            )
+            return
+
+        # Verifica che sia stata eseguita un'analisi valida.
+        if self.ultimo_risultato_analisi is None:
+            QMessageBox.warning(
+                self,
+                "Analisi necessaria",
+                "Prima di creare requirements.txt, "
+                "esegui l'analisi del progetto.",
+            )
+            return
+
+        risultato = self.ultimo_risultato_analisi
+        analisi = risultato.get("analisi", {})
+
+        # Non genera il file se alcuni sorgenti non sono stati
+        # letti o analizzati correttamente.
+        errori_analisi = analisi.get("errori", [])
+
+        if errori_analisi:
+            QMessageBox.warning(
+                self,
+                "Analisi incompleta",
+                "Non posso creare requirements.txt perché "
+                "uno o più file Python contengono errori "
+                "di lettura o di sintassi.\n\n"
+                "Correggi gli errori e ripeti l'analisi.",
+            )
+            return
+
+        # Recupera i pacchetti che il classificatore ha
+        # riconosciuto con sufficiente certezza.
+        informazioni_requirements = risultato.get(
+            "requirements",
+            {},
+        )
+
+        pacchetti = informazioni_requirements.get(
+            "pacchetti_conosciuti",
+            set(),
+        )
+
+        # Elimina eventuali duplicati e ordina i pacchetti.
+        pacchetti = sorted({
+            str(pacchetto).strip()
+            for pacchetto in pacchetti
+            if str(pacchetto).strip()
+        })
+
+        if not pacchetti:
+            QMessageBox.information(
+                self,
+                "Nessun pacchetto riconosciuto",
+                "L'analisi non ha individuato pacchetti esterni "
+                "installabili riconosciuti con certezza.\n\n"
+                "Non è stato creato alcun file.",
+            )
+            return
+
+        # Definisce il percorso del file nella cartella analizzata.
+        percorso_requirements = (
+            self.cartella_progetto / "requirements.txt"
+        )
+
+        # Se il file esiste già, chiede conferma prima
+        # di sovrascriverlo.
+        if percorso_requirements.exists():
+            risposta = QMessageBox.question(
+                self,
+                "Conferma sovrascrittura",
+                "Il file requirements.txt esiste già.\n\n"
+                "Vuoi sovrascriverlo con i pacchetti "
+                "riconosciuti dall'ultima analisi?",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+
+            if risposta != QMessageBox.StandardButton.Yes:
+                self.statusBar().showMessage(
+                    "Generazione annullata: file esistente mantenuto."
+                )
+                return
+
+        # Prepara il contenuto: un pacchetto per riga.
+        contenuto = "\n".join(pacchetti) + "\n"
+
+        try:
+            # Scrive il file usando la codifica UTF-8.
+            percorso_requirements.write_text(
+                contenuto,
+                encoding="utf-8",
+            )
+
+        except OSError as errore:
+            QMessageBox.critical(
+                self,
+                "Errore di scrittura",
+                "Non è stato possibile creare requirements.txt.\n\n"
+                f"Dettagli: {errore}",
+            )
+
+            self.statusBar().showMessage(
+                "Errore durante la creazione di requirements.txt."
+            )
+            return
+
+        # Raccoglie i moduli che richiedono un controllo manuale.
+        moduli_da_verificare = set(
+            risultato.get("classificazione", {}).get(
+                "da_verificare",
+                set(),
+            )
+        )
+
+        moduli_da_verificare.update(
+            analisi.get(
+                "importazioni_dinamiche_da_verificare",
+                set(),
+            )
+        )
+
+        informazioni_requirements_da_verificare = (
+            informazioni_requirements.get("da_verificare", set())
+        )
+
+        moduli_da_verificare.update(
+            informazioni_requirements_da_verificare
+        )
+
+        # Il file contiene solo i pacchetti riconosciuti.
+        # Se ci sono dubbi, lo comunichiamo chiaramente all'utente.
+        if moduli_da_verificare:
+            messaggio = (
+                "requirements.txt è stato creato correttamente.\n\n"
+                f"Percorso:\n{percorso_requirements}\n\n"
+                "Il file contiene soltanto i pacchetti riconosciuti "
+                "con certezza.\n\n"
+                "ATTENZIONE: alcune importazioni richiedono "
+                "una verifica manuale. Il file potrebbe quindi "
+                "non contenere tutte le dipendenze del progetto.\n\n"
+                "Controlla la sezione 'IMPORTAZIONI DA VERIFICARE' "
+                "nei risultati dell'analisi."
+            )
+
+            QMessageBox.warning(
+                self,
+                "File creato con verifiche necessarie",
+                messaggio,
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Requirements creato",
+                "requirements.txt è stato creato correttamente.\n\n"
+                f"Percorso:\n{percorso_requirements}\n\n"
+                "Sono stati inseriti soltanto i pacchetti "
+                "riconosciuti dall'analisi.",
+            )
+
+        self.statusBar().showMessage(
+            "requirements.txt creato."
+        )
 
 
 def avvia_gui():

@@ -20,6 +20,7 @@ from analyzer import analizza_progetto
 from dependency_classifier import (
     classifica_moduli,
     raggruppa_pacchetti_esterni,
+    analizza_pacchetti_requirements,
 )
 
 
@@ -41,6 +42,8 @@ def esegui_analisi_progetto(cartella_progetto):
         - classificazione: categorie dei moduli importati
         - pacchetti_esterni: raggruppamento dei pacchetti
           esterni candidati all'installazione tramite pip
+        - requirements: pacchetti riconosciuti e moduli da verificare
+        - requirements_completo: indica se l'analisi è priva di errori
 
     In caso di errore generale, restituisce un dizionario
     con il messaggio dell'errore.
@@ -66,16 +69,36 @@ def esegui_analisi_progetto(cartella_progetto):
         risultati_analisi = analizza_progetto(cartella)
 
         # ----------------------------------------------------
-        # 2. CLASSIFICAZIONE DEI MODULI
+        # 2. AGGIUNGE LE IMPORTAZIONI DINAMICHE RICONOSCIUTE
+        # ----------------------------------------------------
+
+        # Le importazioni dinamiche con nome letterale, come:
+        # importlib.import_module("pandas")
+        #
+        # devono essere considerate insieme alle importazioni
+        # normali. Il set evita automaticamente i duplicati.
+        moduli_importati = set(
+            risultati_analisi["moduli_importati"]
+        )
+
+        moduli_importati.update(
+            risultati_analisi.get(
+                "importazioni_dinamiche",
+                set(),
+            )
+        )
+
+        # ----------------------------------------------------
+        # 3. CLASSIFICAZIONE DEI MODULI
         # ----------------------------------------------------
 
         risultati_classificazione = classifica_moduli(
-            risultati_analisi["moduli_importati"],
+            moduli_importati,
             cartella,
         )
 
         # ----------------------------------------------------
-        # 3. RAGGRUPPAMENTO DEI PACCHETTI ESTERNI
+        # 4. RAGGRUPPAMENTO DEI PACCHETTI ESTERNI
         # ----------------------------------------------------
 
         pacchetti_esterni = raggruppa_pacchetti_esterni(
@@ -83,7 +106,29 @@ def esegui_analisi_progetto(cartella_progetto):
         )
 
         # ----------------------------------------------------
-        # 4. PREPARAZIONE DEI RISULTATI PER LA GUI
+        # 5. PREPARAZIONE DEI PACCHETTI PER REQUIREMENTS
+        # ----------------------------------------------------
+
+        requirements = analizza_pacchetti_requirements(
+            risultati_classificazione
+        )
+
+        # ----------------------------------------------------
+        # 6. CONTROLLO DEGLI ERRORI DI ANALISI
+        # ----------------------------------------------------
+
+        # Se anche un solo file non è stato letto o analizzato
+        # correttamente, non possiamo garantire che tutte le
+        # dipendenze siano state individuate.
+        errori_analisi = risultati_analisi.get(
+            "errori",
+            [],
+        )
+
+        requirements_completo = not errori_analisi
+
+        # ----------------------------------------------------
+        # 7. PREPARAZIONE DEI RISULTATI PER LA GUI
         # ----------------------------------------------------
 
         return {
@@ -91,6 +136,8 @@ def esegui_analisi_progetto(cartella_progetto):
             "analisi": risultati_analisi,
             "classificazione": risultati_classificazione,
             "pacchetti_esterni": pacchetti_esterni,
+            "requirements": requirements,
+            "requirements_completo": requirements_completo,
         }
 
     except Exception as errore:
