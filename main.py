@@ -37,7 +37,6 @@ Il programma non esegue il codice dei progetti da analizzare.
 
 
 """
-PyDeps Analyzer
 File: main.py
 
 Punto di ingresso dell'applicazione.

@@ -12,12 +12,14 @@ Classifica i moduli importati da un progetto Python in:
 Ricava, quando possibile, il nome del pacchetto installabile
 tramite pip, evitando di elencare separatamente i sottomoduli.
 
+Se il nome del pacchetto non è presente nella mappatura,
+conserva il nome del modulo principale trovato nella scansione.
+
 IMPORTANTE:
 - L'analisi è statica: il progetto analizzato non viene eseguito.
 - Un import rilevato non dimostra che il pacchetto sia
   indispensabile in ogni possibile esecuzione.
-- I nomi non riconosciuti non vengono considerati
-  automaticamente dipendenze certe.
+- I moduli non riconosciuti vengono conservati come candidati.
 - I moduli interni a una libreria non devono diventare
   voci separate nel requirements.txt.
 """
@@ -53,12 +55,6 @@ CARTELLE_ESCLUSE = {
 # MAPPATURA: MODULO PRINCIPALE -> PACCHETTO PIP
 # ============================================================
 
-# Queste corrispondenze sono note e vengono utilizzate
-# per ricavare il nome del pacchetto da installare.
-#
-# La chiave è il nome principale del modulo importato.
-# Il valore è il nome del pacchetto installabile tramite pip.
-
 MAPPATURA_PACCHETTI = {
     # Elaborazione dati e calcolo scientifico.
     "numpy": "numpy",
@@ -72,6 +68,7 @@ MAPPATURA_PACCHETTI = {
     "PyQt6": "PyQt6",
     "PyQt5": "PyQt5",
     "tkinter": None,
+    "tkcalendar": "tkcalendar",
 
     # Web e richieste HTTP.
     "requests": "requests",
@@ -106,47 +103,33 @@ MAPPATURA_PACCHETTI = {
     "win32gui": "pywin32",
     "wx": "wxPython",
 
+   
+
     # Altri pacchetti comuni.
     "pytest": "pytest",
-    "PIL": "Pillow",
-    "PIL.Image": "Pillow",
     "cryptography": "cryptography",
     "bcrypt": "bcrypt",
     "jwt": "PyJWT",
     "passlib": "passlib",
-    "yaml": "PyYAML",
     "lxml": "lxml",
-    "bs4": "beautifulsoup4",
     "openpyxl": "openpyxl",
     "xlsxwriter": "XlsxWriter",
     "docx": "python-docx",
     "pptx": "python-pptx",
-    "fitz": "PyMuPDF",
     "qrcode": "qrcode",
-    "PIL": "Pillow",
-    "dotenv": "python-dotenv",
     "keyring": "keyring",
     "psutil": "psutil",
     "schedule": "schedule",
-    "yaml": "PyYAML",
     "rich": "rich",
     "typer": "typer",
     "click": "click",
     "pydantic": "pydantic",
-    "PIL": "Pillow",
 }
 
 
 # ============================================================
 # MODULI STANDARD DA NON INSERIRE IN REQUIREMENTS
 # ============================================================
-
-# Alcuni moduli fanno parte di Python ma non sempre sono
-# inclusi nell'insieme principale dei moduli standard.
-#
-# tkinter, per esempio, viene distribuito con molte installazioni
-# di Python, ma può richiedere componenti di sistema separati.
-# Non è quindi un pacchetto pip da aggiungere automaticamente.
 
 MODULI_NON_PIP = {
     "tkinter",
@@ -158,11 +141,6 @@ MODULI_NON_PIP = {
 # ============================================================
 # NOMI AMBIGUI DA VERIFICARE
 # ============================================================
-
-# Il nome principale da solo non permette sempre di determinare
-# quale pacchetto installare.
-#
-# Questi moduli vengono mantenuti tra i candidati da verificare.
 
 MODULI_AMBIGUI = {
     "google",
@@ -191,7 +169,6 @@ def trova_moduli_locali(cartella_progetto):
 
     for percorso in cartella.rglob("*.py"):
 
-        # Ignora i file che si trovano in cartelle escluse.
         percorso_relativo = percorso.relative_to(cartella)
 
         if any(
@@ -200,10 +177,10 @@ def trova_moduli_locali(cartella_progetto):
         ):
             continue
 
-        # Converte il percorso relativo in un nome di modulo.
-        parti = list(percorso_relativo.with_suffix("").parts)
+        parti = list(
+            percorso_relativo.with_suffix("").parts
+        )
 
-        # __init__.py rappresenta il pacchetto.
         if parti and parti[-1] == "__init__":
             parti.pop()
 
@@ -212,17 +189,13 @@ def trova_moduli_locali(cartella_progetto):
 
         nome_modulo = ".".join(parti)
 
-        # Registra il nome completo.
         moduli_locali.add(nome_modulo)
-
-        # Registra anche il nome principale.
         moduli_locali.add(parti[0])
 
-        # Registra i livelli intermedi dei pacchetti.
-        # Esempio: progetto.models.utente aggiunge anche
-        # progetto.models.
         for indice in range(1, len(parti)):
-            moduli_locali.add(".".join(parti[:indice]))
+            moduli_locali.add(
+                ".".join(parti[:indice])
+            )
 
     return moduli_locali
 
@@ -251,7 +224,6 @@ def nome_modulo_principale(nome_importazione):
     if not nome_importazione:
         return ""
 
-    # Le importazioni relative iniziano con un punto.
     if nome_importazione.startswith("."):
         return ""
 
@@ -268,11 +240,11 @@ def classifica_moduli(moduli_importati, cartella_progetto):
 
     Restituisce un dizionario con quattro categorie:
     standard, locali, esterni e da_verificare.
-
-    Mantiene la struttura utilizzata dalle versioni precedenti.
     """
 
-    moduli_locali = trova_moduli_locali(cartella_progetto)
+    moduli_locali = trova_moduli_locali(
+        cartella_progetto
+    )
 
     risultati = {
         "standard": set(),
@@ -287,31 +259,38 @@ def classifica_moduli(moduli_importati, cartella_progetto):
             nome_importazione
         )
 
-        # Un nome vuoto o relativo non è un pacchetto pip.
         if not nome_principale:
-            risultati["da_verificare"].add(nome_importazione)
+            risultati["da_verificare"].add(
+                nome_importazione
+            )
             continue
 
-        # Modulo appartenente alla libreria standard.
         if nome_principale in MODULI_STANDARD:
-            risultati["standard"].add(nome_importazione)
+            risultati["standard"].add(
+                nome_importazione
+            )
             continue
 
-        # Modulo appartenente al progetto.
         if (
             nome_importazione in moduli_locali
             or nome_principale in moduli_locali
         ):
-            risultati["locali"].add(nome_importazione)
+            risultati["locali"].add(
+                nome_importazione
+            )
             continue
 
-        # Modulo esterno con nome potenzialmente ambiguo.
+        # I nomi ambigui vengono conservati separatamente.
+        # Saranno comunque inclusi come candidati in requirements.
         if nome_principale in MODULI_AMBIGUI:
-            risultati["da_verificare"].add(nome_importazione)
+            risultati["da_verificare"].add(
+                nome_importazione
+            )
             continue
 
-        # Modulo esterno da ricondurre a un pacchetto pip.
-        risultati["esterni"].add(nome_importazione)
+        risultati["esterni"].add(
+            nome_importazione
+        )
 
     return risultati
 
@@ -322,17 +301,16 @@ def classifica_moduli(moduli_importati, cartella_progetto):
 
 def nome_pacchetto_installabile(nome_importazione):
     """
-    Ricava il nome del pacchetto pip quando la corrispondenza
-    è presente nella mappatura conosciuta.
+    Ricava il nome del pacchetto da inserire in requirements.
 
-    Esempi:
-        dotenv -> python-dotenv
-        sklearn -> scikit-learn
-        PySide6.QtWidgets -> PySide6
-        pandas.core.frame -> pandas
+    Se il modulo è presente nella mappatura, usa il nome
+    della distribuzione pip corrispondente.
 
-    Restituisce None quando il nome non può essere determinato
-    con sufficiente sicurezza.
+    Se il modulo non è presente nella mappatura, restituisce
+    il nome principale trovato nella scansione.
+
+    Restituisce None per i moduli che non devono essere
+    inseriti in requirements.
     """
 
     nome_principale = nome_modulo_principale(
@@ -342,16 +320,28 @@ def nome_pacchetto_installabile(nome_importazione):
     if not nome_principale:
         return None
 
-    # Non propone moduli che non rappresentano pacchetti pip.
+    if nome_principale in MODULI_STANDARD:
+        return None
+
     if nome_principale in MODULI_NON_PIP:
         return None
 
-    # Evita di inventare una corrispondenza per nomi ambigui.
-    if nome_principale in MODULI_AMBIGUI:
+    # Se il modulo è presente nella mappatura,
+    # utilizza il nome della distribuzione pip.
+    if nome_principale in MAPPATURA_PACCHETTI:
+
+        nome_pacchetto = MAPPATURA_PACCHETTI[
+            nome_principale
+        ]
+
+        if nome_pacchetto is not None:
+            return nome_pacchetto
+
         return None
 
-    # Restituisce esclusivamente le corrispondenze conosciute.
-    return MAPPATURA_PACCHETTI.get(nome_principale)
+    # Se non esiste una corrispondenza, conserva
+    # il nome principale rilevato durante la scansione.
+    return nome_principale
 
 
 # ============================================================
@@ -360,16 +350,13 @@ def nome_pacchetto_installabile(nome_importazione):
 
 def livello_affidabilita_pacchetto(nome_importazione):
     """
-    Indica l'affidabilità della corrispondenza tra modulo e
-    pacchetto pip.
+    Indica l'affidabilità della corrispondenza tra modulo
+    e pacchetto pip.
 
     Valori possibili:
         "conosciuto"
         "da_verificare"
         "non_determinabile"
-
-    Questo livello riguarda il nome del pacchetto e non dimostra
-    che esso sia indispensabile in ogni possibile esecuzione.
     """
 
     nome_principale = nome_modulo_principale(
@@ -379,16 +366,25 @@ def livello_affidabilita_pacchetto(nome_importazione):
     if not nome_principale:
         return "non_determinabile"
 
-    if nome_principale in MODULI_NON_PIP:
+    if (
+        nome_principale in MODULI_STANDARD
+        or nome_principale in MODULI_NON_PIP
+    ):
         return "non_determinabile"
 
     if nome_principale in MODULI_AMBIGUI:
         return "da_verificare"
 
     if nome_principale in MAPPATURA_PACCHETTI:
-        return "conosciuto"
 
-    # Non conosciamo con certezza il pacchetto corrispondente.
+        if (
+            MAPPATURA_PACCHETTI[nome_principale]
+            is not None
+        ):
+            return "conosciuto"
+
+    # Il modulo viene conservato anche se la mappatura
+    # non permette di confermare il nome della distribuzione.
     return "da_verificare"
 
 
@@ -396,26 +392,14 @@ def livello_affidabilita_pacchetto(nome_importazione):
 # RAGGRUPPA I MODULI ESTERNI PER PACCHETTO CANDIDATO
 # ============================================================
 
-def raggruppa_pacchetti_esterni(risultati_classificazione):
+def raggruppa_pacchetti_esterni(
+    risultati_classificazione,
+):
     """
-    Raggruppa i moduli esterni per pacchetto pip conosciuto.
+    Raggruppa i moduli esterni per nome del pacchetto candidato.
 
-    Esempio:
-        PySide6.QtCore
-        PySide6.QtGui
-        PySide6.QtWidgets
-
-    Producono un unico gruppo:
-        {
-            "PySide6": {
-                "PySide6.QtCore",
-                "PySide6.QtGui",
-                "PySide6.QtWidgets"
-            }
-        }
-
-    I moduli non riconosciuti non vengono trasformati
-    automaticamente in nomi di pacchetti installabili.
+    Se il nome pip è conosciuto, usa quello.
+    Altrimenti conserva il nome principale del modulo.
     """
 
     pacchetti = {}
@@ -431,16 +415,15 @@ def raggruppa_pacchetti_esterni(risultati_classificazione):
             nome_importazione
         )
 
-        # Salta i moduli per cui non abbiamo una corrispondenza.
         if nome_pacchetto is None:
             continue
 
-        # Crea il gruppo se non esiste ancora.
         if nome_pacchetto not in pacchetti:
             pacchetti[nome_pacchetto] = set()
 
-        # Registra il modulo che ha generato il candidato.
-        pacchetti[nome_pacchetto].add(nome_importazione)
+        pacchetti[nome_pacchetto].add(
+            nome_importazione
+        )
 
     return pacchetti
 
@@ -449,14 +432,11 @@ def raggruppa_pacchetti_esterni(risultati_classificazione):
 # CREA UN RESOCONTO DETTAGLIATO DEI PACCHETTI CANDIDATI
 # ============================================================
 
-def dettagli_pacchetti_esterni(risultati_classificazione):
+def dettagli_pacchetti_esterni(
+    risultati_classificazione,
+):
     """
     Crea un resoconto dettagliato dei pacchetti candidati.
-
-    Per ogni pacchetto restituisce:
-    - nome del pacchetto;
-    - moduli importati che lo hanno generato;
-    - affidabilità della corrispondenza.
     """
 
     pacchetti = raggruppa_pacchetti_esterni(
@@ -474,8 +454,10 @@ def dettagli_pacchetti_esterni(risultati_classificazione):
 
         if "da_verificare" in livelli:
             affidabilita = "da_verificare"
+
         elif "non_determinabile" in livelli:
             affidabilita = "non_determinabile"
+
         else:
             affidabilita = "conosciuto"
 
@@ -492,10 +474,11 @@ def dettagli_pacchetti_esterni(risultati_classificazione):
 # RICAVA I PACCHETTI CONOSCIUTI E QUELLI DA VERIFICARE
 # ============================================================
 
-def analizza_pacchetti_requirements(risultati_classificazione):
+def analizza_pacchetti_requirements(
+    risultati_classificazione,
+):
     """
-    Prepara i pacchetti per la futura generazione del file
-    requirements.txt.
+    Prepara i pacchetti per la generazione di requirements.txt.
 
     Restituisce:
         {
@@ -503,38 +486,77 @@ def analizza_pacchetti_requirements(risultati_classificazione):
             "da_verificare": set()
         }
 
-    I pacchetti conosciuti sono deduplicati.
-    I nomi incerti restano separati e non vengono inseriti
-    automaticamente nel requirements.txt.
+    La chiave "pacchetti_conosciuti" contiene tutti i nomi
+    candidati da scrivere in requirements.txt:
+    - nome pip dalla mappatura, se disponibile;
+    - nome principale trovato nella scansione, altrimenti.
+
+    La chiave "da_verificare" conserva i moduli incerti
+    per eventuali avvisi all'utente.
     """
 
     pacchetti_conosciuti = set()
     da_verificare = set()
 
-    # Raggruppa i moduli esterni riconosciuti.
-    for nome_pacchetto, moduli in raggruppa_pacchetti_esterni(
-        risultati_classificazione
-    ).items():
-
-        if all(
-            livello_affidabilita_pacchetto(modulo) == "conosciuto"
-            for modulo in moduli
-        ):
-            pacchetti_conosciuti.add(nome_pacchetto)
-        else:
-            da_verificare.update(moduli)
-
-    # Recupera anche i moduli esterni non associati a un
-    # pacchetto conosciuto.
-    for modulo in risultati_classificazione.get("esterni", set()):
-
-        if nome_pacchetto_installabile(modulo) is None:
-            da_verificare.add(modulo)
-
-    # Aggiunge i moduli già classificati come ambigui.
-    da_verificare.update(
-        risultati_classificazione.get("da_verificare", set())
+    # I moduli esterni vengono elaborati normalmente.
+    moduli_esterni = risultati_classificazione.get(
+        "esterni",
+        set(),
     )
+
+    # Anche i moduli ambigui vengono conservati come candidati.
+    moduli_da_verificare = risultati_classificazione.get(
+        "da_verificare",
+        set(),
+    )
+
+    tutti_i_candidati = (
+        set(moduli_esterni)
+        | set(moduli_da_verificare)
+    )
+
+    for modulo in tutti_i_candidati:
+
+        nome_principale = nome_modulo_principale(
+            modulo
+        )
+
+        if not nome_principale:
+            # Non inserisce importazioni relative
+            # di cui non è possibile ricavare il nome.
+            da_verificare.add(modulo)
+            continue
+
+        if (
+            nome_principale in MODULI_STANDARD
+            or nome_principale in MODULI_NON_PIP
+        ):
+            continue
+
+        nome_pacchetto = nome_pacchetto_installabile(
+            modulo
+        )
+
+        if nome_pacchetto is None:
+            # Un modulo escluso dalla generazione non
+            # viene inserito in requirements.txt.
+            continue
+
+        # Inserisce il nome pip mappato oppure il nome
+        # principale rilevato durante la scansione.
+        #
+        # Il set elimina automaticamente i duplicati.
+        pacchetti_conosciuti.add(
+            nome_pacchetto
+        )
+
+        # Se non esiste una corrispondenza affidabile,
+        # conserva il modulo per l'avviso di verifica.
+        if (
+            livello_affidabilita_pacchetto(modulo)
+            != "conosciuto"
+        ):
+            da_verificare.add(modulo)
 
     return {
         "pacchetti_conosciuti": pacchetti_conosciuti,
@@ -566,7 +588,9 @@ def stampa_classificazione(risultati):
         print(titolo)
         print("=" * 60)
 
-        moduli = sorted(risultati.get(chiave, set()))
+        moduli = sorted(
+            risultati.get(chiave, set())
+        )
 
         if not moduli:
             print("Nessun modulo trovato.")
@@ -575,21 +599,24 @@ def stampa_classificazione(risultati):
         for modulo in moduli:
             print(f"- {modulo}")
 
-    # Mostra i pacchetti conosciuti e i candidati da verificare.
-    riepilogo = analizza_pacchetti_requirements(risultati)
+    riepilogo = analizza_pacchetti_requirements(
+        risultati
+    )
 
     print()
     print("=" * 60)
-    print("PACCHETTI PRINCIPALI RICONOSCIUTI")
+    print("PACCHETTI CANDIDATI PER REQUIREMENTS")
     print("=" * 60)
 
     if riepilogo["pacchetti_conosciuti"]:
+
         for nome_pacchetto in sorted(
             riepilogo["pacchetti_conosciuti"]
         ):
             print(f"- {nome_pacchetto}")
+
     else:
-        print("Nessun pacchetto riconosciuto.")
+        print("Nessun pacchetto candidato trovato.")
 
     print()
     print("=" * 60)
@@ -597,8 +624,12 @@ def stampa_classificazione(risultati):
     print("=" * 60)
 
     if riepilogo["da_verificare"]:
-        for modulo in sorted(riepilogo["da_verificare"]):
+
+        for modulo in sorted(
+            riepilogo["da_verificare"]
+        ):
             print(f"- {modulo}")
+
     else:
         print("Nessun modulo da verificare.")
 
@@ -613,9 +644,10 @@ def main():
     che contiene questo file.
     """
 
-    cartella_progetto = Path(__file__).resolve().parent
+    cartella_progetto = Path(
+        __file__
+    ).resolve().parent
 
-    # Importa l'analizzatore statico.
     from analyzer import analizza_progetto
 
     risultati_analisi = analizza_progetto(
